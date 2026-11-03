@@ -1,0 +1,6 @@
+{
+  "name": "Drive-Thru Vigilante 3D",
+  "description": "1인칭 3D 드라이빙스루 매장에서 강도의 총알을 숙여 피하고 샷건으로 제압하거나 버거를 주문하는 60초 긴장감 넘치는 아케이드 액션 게임",
+  "requestFramePermissions": [],
+  "majorCapabilities": ["MAJOR_CAPABILITY_SERVER_SIDE_GEMINI_API"]
+}

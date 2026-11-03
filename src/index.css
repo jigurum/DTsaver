@@ -1,0 +1,36 @@
+@import "tailwindcss";
+
+@layer base {
+  * {
+    -webkit-tap-highlight-color: transparent;
+    user-select: none;
+  }
+  body {
+    margin: 0;
+    padding: 0;
+    overflow: hidden;
+    background-color: #0c0a09;
+  }
+}
+
+/* Custom retro-arcade scanline and vignette effects */
+.arcade-vignette {
+  background: radial-gradient(circle at center, transparent 60%, rgba(0, 0, 0, 0.65) 100%);
+  pointer-events: none;
+}
+
+.blood-splatter {
+  background: radial-gradient(circle at center, rgba(220, 38, 38, 0.4) 0%, rgba(185, 28, 28, 0.8) 100%);
+}
+
+@keyframes muzzleShake {
+  0% { transform: translate(0, 0) rotate(0deg); }
+  25% { transform: translate(-4px, -8px) rotate(-1.5deg); }
+  50% { transform: translate(3px, 4px) rotate(1deg); }
+  75% { transform: translate(-2px, 1px) rotate(-0.5deg); }
+  100% { transform: translate(0, 0) rotate(0deg); }
+}
+
+.animate-recoil {
+  animation: muzzleShake 0.18s ease-out;
+}
