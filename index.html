@@ -9,12 +9,356 @@
     <meta property="og:description" content="1인칭 3D 드라이빙스루 매장에서 강도의 총알을 숙여 피하고 샷건으로 제압하거나 버거를 주문하는 60초 긴장감 넘치는 아케이드 액션 게임" />
     <meta property="og:type" content="website" />
     <meta name="twitter:card" content="summary_large_image" />
+
+    <!-- Google Fonts -->
     <link rel="preconnect" href="https://fonts.googleapis.com">
     <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
     <link href="https://fonts.googleapis.com/css2?family=Black+Han+Sans&family=Outfit:wght@400;600;800;900&family=Noto+Sans+KR:wght@400;700;900&display=swap" rel="stylesheet">
+
+    <!-- Tailwind CSS CDN for Zero-Build instant execution on GitHub Pages -->
+    <script src="https://cdn.tailwindcss.com"></script>
+    <script>
+      tailwind.config = {
+        theme: {
+          extend: {
+            fontFamily: {
+              sans: ['Outfit', 'Noto Sans KR', 'sans-serif'],
+              display: ['Black Han Sans', 'sans-serif'],
+            }
+          }
+        }
+      }
+    </script>
+
+    <!-- Three.js CDN -->
+    <script src="https://cdnjs.cloudflare.com/ajax/libs/three.js/r128/three.min.js"></script>
+
+    <style>
+      body {
+        margin: 0;
+        padding: 0;
+        overflow: hidden;
+        user-select: none;
+        -webkit-user-select: none;
+        background-color: #0c0a09;
+        font-family: 'Outfit', 'Noto Sans KR', sans-serif;
+      }
+      .arcade-vignette {
+        background: radial-gradient(circle at center, transparent 55%, rgba(0, 0, 0, 0.75) 100%);
+      }
+      .blood-splatter {
+        background: radial-gradient(circle at center, rgba(220, 38, 38, 0.45) 0%, rgba(127, 29, 29, 0.85) 100%);
+      }
+    </style>
   </head>
-  <body class="bg-stone-950 text-white select-none overflow-hidden touch-none font-sans">
-    <div id="root"></div>
-    <script type="module" src="/src/main.tsx"></script>
+  <body class="text-white select-none overflow-hidden touch-none">
+    <!-- WebGL Canvas Container -->
+    <div id="canvas-container" class="fixed inset-0 w-full h-full z-0 cursor-crosshair"></div>
+
+    <!-- Blood Splatter Flash on damage / failure -->
+    <div id="blood-flash" class="hidden fixed inset-0 z-50 pointer-events-none blood-splatter animate-pulse border-8 border-red-700"></div>
+
+    <!-- Retro Arcade Vignette -->
+    <div class="fixed inset-0 arcade-vignette pointer-events-none z-10"></div>
+
+    <!-- UI LAYER -->
+    <div class="fixed inset-0 pointer-events-none select-none flex flex-col justify-between p-2 sm:p-4 z-20">
+      
+      <!-- TOP BAR: Score, Timer, Ammo, Sound -->
+      <div class="flex items-center justify-between gap-2 max-w-4xl mx-auto w-full">
+        <!-- Left: Score & High Score -->
+        <div class="bg-stone-900/90 border border-stone-700/80 rounded-xl px-3 py-1.5 shadow-lg flex items-center gap-3">
+          <div>
+            <div class="text-[10px] uppercase font-bold text-stone-400 tracking-wider">점수 (SCORE)</div>
+            <div id="hud-score" class="text-xl sm:text-2xl font-black text-amber-400 font-mono tracking-tight leading-none">0</div>
+          </div>
+          <div class="h-6 w-px bg-stone-700 hidden sm:block"></div>
+          <div class="hidden sm:block">
+            <div class="text-[9px] uppercase text-stone-400 font-bold">최고기록</div>
+            <div id="hud-highscore" class="text-xs font-bold text-stone-300 font-mono leading-none">0</div>
+          </div>
+        </div>
+
+        <!-- Center: 60s Round Timer -->
+        <div class="flex flex-col items-center">
+          <div id="timer-wrapper" class="px-4 py-1.5 rounded-xl border font-mono font-black text-center shadow-lg bg-stone-900/90 border-amber-500/60 text-amber-300">
+            <div class="text-[9px] uppercase tracking-widest text-stone-400 font-bold">남은 시간</div>
+            <div id="hud-timer" class="text-2xl sm:text-3xl leading-none">60s</div>
+          </div>
+        </div>
+
+        <!-- Right: Shotgun Ammo & Sound Toggle -->
+        <div class="flex items-center gap-2">
+          <!-- Ammo display -->
+          <div class="bg-stone-900/90 border border-stone-700/80 rounded-xl px-3 py-1.5 shadow-lg flex items-center gap-2">
+            <div>
+              <div class="text-[9px] uppercase font-bold text-stone-400 tracking-wider">탄약 (AMMO)</div>
+              <div class="flex items-center gap-1.5 mt-0.5">
+                <div id="shell-0" class="w-3.5 h-6 rounded-xs border bg-red-600 border-amber-300 shadow-[0_0_8px_rgba(239,68,68,0.7)]">
+                  <div class="w-full h-1.5 bg-amber-400 rounded-t-xs"></div>
+                </div>
+                <div id="shell-1" class="w-3.5 h-6 rounded-xs border bg-red-600 border-amber-300 shadow-[0_0_8px_rgba(239,68,68,0.7)]">
+                  <div class="w-full h-1.5 bg-amber-400 rounded-t-xs"></div>
+                </div>
+                <span id="ammo-text" class="font-mono text-sm font-bold text-stone-300 ml-1">2/2</span>
+              </div>
+            </div>
+          </div>
+
+          <!-- Sound Toggle -->
+          <button
+            id="btn-mute"
+            class="pointer-events-auto bg-stone-900/90 hover:bg-stone-800 border border-stone-700 p-2 rounded-xl text-stone-300 active:scale-95 transition-transform cursor-pointer"
+            aria-label="음소거 토글"
+          >
+            <span id="mute-icon" class="text-base sm:text-lg">🔊</span>
+          </button>
+        </div>
+      </div>
+
+      <!-- FLOATING TELEGRAPH NOTIFICATION BANNER -->
+      <div id="banner-wrapper" class="relative z-30 flex justify-center mt-2 pointer-events-none">
+        <div class="bg-stone-900/80 border border-stone-700/60 rounded-full px-3.5 py-1 text-stone-300 text-xs font-bold shadow-md">
+          🚗 다음 창구로 자동 주행 중...
+        </div>
+      </div>
+
+      <!-- DUCKED STATUS INDICATOR -->
+      <div id="duck-indicator" class="hidden self-center bg-blue-900/80 border border-blue-400 px-3 py-1 rounded-full text-blue-200 text-xs font-bold items-center gap-1.5 shadow-md">
+        <span>🛡️ 차량 대시보드 뒤로 숙여 회피 중 (안전 상태)</span>
+      </div>
+
+      <!-- SCORE POPUP ANIMATIONS -->
+      <div id="popup-container" class="fixed inset-0 pointer-events-none overflow-hidden flex flex-col items-center justify-center gap-2"></div>
+
+      <!-- BOTTOM CONTROL DOCK (PC & Mobile Unified) -->
+      <div class="relative z-30 max-w-md mx-auto w-full pointer-events-auto mt-auto pb-1">
+        <!-- PC FPS Keybind Bar -->
+        <div class="text-center text-[10px] sm:text-xs text-stone-400 font-bold mb-1 drop-shadow-md bg-stone-950/70 py-0.5 px-2 rounded-full mx-auto w-fit border border-stone-800/80">
+          🖱️ 마우스 이동: 시점 조준 | 좌클릭: 발사 | 우클릭: 줌인 | Shift: 숙이기 | R: 장전 | E: 주문
+        </div>
+        <div class="bg-stone-900/95 border border-stone-800 rounded-2xl p-1.5 shadow-2xl backdrop-blur-md">
+          <!-- Action Button Grid - 6 Buttons -->
+          <div class="grid grid-cols-6 gap-1 sm:gap-1.5">
+            <!-- 1. 🛡️ 숙이기 (Duck / Dodge) -->
+            <button
+              id="btn-duck"
+              class="flex flex-col items-center justify-center p-1.5 sm:p-2 rounded-xl active:scale-95 border transition cursor-pointer bg-stone-800 hover:bg-stone-700 border-stone-700 text-stone-200"
+              title="총알 숙여 피하기 (Shift)"
+            >
+              <span class="text-lg sm:text-xl">🛡️</span>
+              <span class="text-[10px] sm:text-xs font-black mt-0.5 leading-none">숙이기</span>
+              <span class="text-[8px] font-mono text-stone-400 hidden sm:inline">Shift</span>
+            </button>
+
+            <!-- 2. 🔫 총 들기 (Equip Gun) -->
+            <button
+              id="btn-gun"
+              class="flex flex-col items-center justify-center p-1.5 sm:p-2 rounded-xl active:scale-95 border transition cursor-pointer bg-amber-600 border-amber-400 shadow-[0_0_10px_rgba(217,119,6,0.6)] text-white"
+              title="샷건 꺼내기 / 파지"
+            >
+              <span class="text-lg sm:text-xl">🔫</span>
+              <span class="text-[10px] sm:text-xs font-black mt-0.5 leading-none">총들기</span>
+              <span class="text-[8px] font-mono text-stone-400 hidden sm:inline">Space</span>
+            </button>
+
+            <!-- 3. 🎯 조준 (Zoom-in ADS) -->
+            <button
+              id="btn-aim"
+              class="flex flex-col items-center justify-center p-1.5 sm:p-2 rounded-xl active:scale-95 border transition cursor-pointer bg-stone-800 hover:bg-stone-700 border-stone-700 text-stone-300"
+              title="창구 확대 조준 (우클릭 유지)"
+            >
+              <span class="text-lg sm:text-xl">🎯</span>
+              <span class="text-[10px] sm:text-xs font-black mt-0.5 leading-none">줌조준</span>
+              <span class="text-[8px] font-mono text-stone-400 hidden sm:inline">우클릭</span>
+            </button>
+
+            <!-- 4. 💥 발사 (Fire Shotgun) -->
+            <button
+              id="btn-fire"
+              class="flex flex-col items-center justify-center p-1.5 sm:p-2 rounded-xl border active:scale-90 transition bg-red-700 hover:bg-red-600 border-red-500 shadow-[0_0_14px_rgba(239,68,68,0.9)] text-white cursor-pointer"
+              title="샷건 발사 (좌클릭 / Space)"
+            >
+              <span class="text-lg sm:text-xl">💥</span>
+              <span class="text-[10px] sm:text-xs font-black mt-0.5 leading-none">발사</span>
+              <span class="text-[8px] font-mono text-stone-200 hidden sm:inline">좌클릭</span>
+            </button>
+
+            <!-- 5. 🔄 장전 (Reload) -->
+            <button
+              id="btn-reload"
+              class="flex flex-col items-center justify-center p-1.5 sm:p-2 rounded-xl active:scale-95 border transition cursor-pointer bg-stone-800 hover:bg-stone-700 border-stone-700 text-stone-200"
+              title="탄약 2발 재장전 (R)"
+            >
+              <span class="text-lg sm:text-xl">🔄</span>
+              <span class="text-[10px] sm:text-xs font-black mt-0.5 leading-none">장전</span>
+              <span class="text-[8px] font-mono text-stone-400 hidden sm:inline">R</span>
+            </button>
+
+            <!-- 6. 🍔 주문 (Order Burger) -->
+            <button
+              id="btn-order"
+              class="flex flex-col items-center justify-center p-1.5 sm:p-2 rounded-xl border active:scale-95 transition bg-emerald-700 hover:bg-emerald-600 border-emerald-500 shadow-[0_0_12px_rgba(16,185,129,0.7)] text-white cursor-pointer"
+              title="직원에게 버거 주문 (E)"
+            >
+              <span class="text-lg sm:text-xl">🍔</span>
+              <span class="text-[10px] sm:text-xs font-black mt-0.5 leading-none">주문</span>
+              <span class="text-[8px] font-mono text-emerald-200 hidden sm:inline">E</span>
+            </button>
+          </div>
+        </div>
+      </div>
+    </div>
+
+    <!-- DYNAMIC CROSSHAIR / RETICLE -->
+    <div id="crosshair" class="fixed pointer-events-none -translate-x-1/2 -translate-y-1/2 z-40 transition-transform duration-75" style="left: 50%; top: 50%;">
+      <div id="crosshair-ring" class="w-11 h-11 border-2 rounded-full flex items-center justify-center transition-all border-red-500/60 relative">
+        <div class="w-2 h-2 rounded-full bg-red-500"></div>
+        <div class="absolute top-0 w-0.5 h-2.5 bg-red-400"></div>
+        <div class="absolute bottom-0 w-0.5 h-2.5 bg-red-400"></div>
+        <div class="absolute left-0 w-2.5 h-0.5 bg-red-400"></div>
+        <div class="absolute right-0 w-2.5 h-0.5 bg-red-400"></div>
+        <div id="crosshair-badge" class="hidden"></div>
+      </div>
+    </div>
+
+    <!-- START SCREEN MODAL -->
+    <div id="start-screen" class="fixed inset-0 z-50 flex items-center justify-center p-3 sm:p-6 bg-stone-950/90 backdrop-blur-md overflow-y-auto">
+      <div class="max-w-md w-full bg-stone-900 border-2 border-amber-500/80 rounded-3xl p-5 sm:p-7 shadow-[0_0_40px_rgba(245,158,11,0.25)] text-center my-auto">
+        <!-- Title Badge -->
+        <div class="inline-flex items-center gap-1.5 px-3 py-1 rounded-full bg-red-950 border border-red-500/80 text-red-400 text-xs font-black tracking-wider uppercase mb-2">
+          🔥 60초 자동주행 아케이드 액션
+        </div>
+
+        <!-- Main Title -->
+        <h1 class="text-3xl sm:text-4xl font-black text-amber-400 tracking-tight leading-tight">
+          드라이빙스루 무법자 3D
+        </h1>
+        <p class="text-stone-300 font-bold text-xs sm:text-sm mt-1">
+          Drive-Thru Vigilante 3D
+        </p>
+
+        <!-- 10-Second Quick Rules -->
+        <div class="mt-4 p-3.5 bg-stone-950/80 border border-stone-800 rounded-2xl text-left space-y-2">
+          <div class="text-xs font-black text-amber-300 border-b border-stone-800 pb-1 flex items-center gap-1">
+            <span class="text-base">⚡</span> 10초 핵심 규칙
+          </div>
+
+          <div class="flex items-start gap-2.5 text-xs text-stone-300">
+            <span class="text-base shrink-0">🍔</span>
+            <div>
+              <strong class="text-emerald-400">친절한 직원 등장:</strong> 1.5초 내 <span class="text-white font-mono bg-stone-800 px-1 rounded">E키</span> / <span class="text-white font-mono bg-stone-800 px-1 rounded">🍔버튼</span> 눌러 주문 완료! <span class="text-emerald-400 font-bold">(+50점)</span>
+            </div>
+          </div>
+
+          <div class="flex items-start gap-2.5 text-xs text-stone-300">
+            <span class="text-base shrink-0">💀</span>
+            <div>
+              <strong class="text-red-400">무장 강도 등장:</strong> 총 쏠 때 <span class="text-white font-mono bg-stone-800 px-1 rounded">Shift키</span> / <span class="text-white font-mono bg-stone-800 px-1 rounded">🛡️버튼</span>으로 숙여 피한 뒤 샷건으로 제압! <span class="text-amber-400 font-bold">(+100점)</span>
+            </div>
+          </div>
+
+          <div class="flex items-start gap-2.5 text-xs text-stone-300">
+            <span class="text-base shrink-0">🚗</span>
+            <div>
+              <strong class="text-sky-400">자동 주행 시스템:</strong> 처리 완료 시 차가 다음 창구로 <span class="text-sky-300 font-bold">자동 이동</span>하여 정차합니다. (운전 조작 불필요)
+            </div>
+          </div>
+        </div>
+
+        <!-- PC & Mobile Cheat Sheet -->
+        <div class="mt-3 grid grid-cols-2 gap-2 text-left text-[11px] text-stone-400 bg-stone-800/40 p-2.5 rounded-xl border border-stone-800">
+          <div>
+            <span class="text-stone-300 font-bold">PC 조작:</span>
+            <div class="mt-0.5 space-y-0.5">
+              <div>• 마우스 이동: 자유 시점</div>
+              <div>• 마우스 우클릭 유지: 줌인</div>
+              <div>• 좌클릭 / Space: 발사</div>
+              <div>• Shift: 숙여 회피</div>
+              <div>• R: 장전 / E: 주문</div>
+            </div>
+          </div>
+          <div>
+            <span class="text-stone-300 font-bold">모바일 조작:</span>
+            <div class="mt-0.5 space-y-0.5">
+              <div>• 하단 6개 버튼 원터치</div>
+              <div>• 🛡️ 숙이기 / 🔫 총들기</div>
+              <div>• 🎯 줌인 / 💥 발사</div>
+              <div>• 🔄 장전 / 🍔 주문</div>
+              <div>• 화면 드래그: 시점 회전</div>
+            </div>
+          </div>
+        </div>
+
+        <!-- Start Button -->
+        <button
+          id="btn-start"
+          class="mt-5 w-full py-3.5 px-6 rounded-2xl bg-gradient-to-r from-amber-500 via-orange-500 to-red-600 hover:from-amber-400 hover:to-red-500 active:scale-95 text-stone-950 font-black text-lg sm:text-xl shadow-[0_0_25px_rgba(245,158,11,0.6)] flex items-center justify-center gap-2 transition cursor-pointer"
+        >
+          <span>▶</span> 게임 시작하기 (60초)
+        </button>
+      </div>
+    </div>
+
+    <!-- GAME OVER MODAL -->
+    <div id="gameover-modal" class="hidden fixed inset-0 z-50 flex items-center justify-center p-3 sm:p-6 bg-stone-950/90 backdrop-blur-md overflow-y-auto">
+      <div class="max-w-md w-full bg-stone-900 border-2 border-stone-700 rounded-3xl p-5 sm:p-7 shadow-2xl text-center my-auto">
+        <!-- Cause Banner -->
+        <div id="gameover-title" class="inline-block px-3 py-1 rounded-full border text-xs font-black tracking-wide bg-red-950 border-red-600 text-red-300 mb-2">
+          강도의 총알에 피격당했습니다!
+        </div>
+
+        <p id="gameover-desc" class="text-stone-400 text-xs font-medium leading-relaxed max-w-xs mx-auto">
+          강도가 총을 쏠 때는 Shift 키(🛡️)로 차문 아래로 숙여 피해야 합니다.
+        </p>
+
+        <!-- Final Score Section -->
+        <div class="my-5 p-4 bg-stone-950 rounded-2xl border border-stone-800">
+          <div class="text-xs uppercase font-bold text-stone-400 tracking-wider">
+            최종 점수 (FINAL SCORE)
+          </div>
+          <div id="gameover-final-score" class="text-4xl sm:text-5xl font-black text-amber-400 font-mono tracking-tight my-1">
+            0점
+          </div>
+
+          <div id="new-record-badge" class="hidden inline-flex items-center gap-1 px-3 py-0.5 rounded-full bg-amber-500/20 border border-amber-400 text-amber-300 text-xs font-black animate-pulse">
+            🎉 최고 점수 경신!
+          </div>
+
+          <!-- Detailed stats breakdown -->
+          <div class="grid grid-cols-2 gap-2 mt-4 pt-4 border-t border-stone-800 text-left">
+            <div class="bg-stone-900/80 p-2.5 rounded-xl border border-stone-800">
+              <div class="text-[10px] text-stone-400 font-bold uppercase">강도 제압</div>
+              <div id="gameover-robbers" class="text-lg font-black text-red-400 font-mono">
+                0명 <span class="text-xs text-stone-500 font-normal">(+0점)</span>
+              </div>
+            </div>
+
+            <div class="bg-stone-900/80 p-2.5 rounded-xl border border-stone-800">
+              <div class="text-[10px] text-stone-400 font-bold uppercase">버거 주문</div>
+              <div id="gameover-orders" class="text-lg font-black text-emerald-400 font-mono">
+                0건 <span class="text-xs text-stone-500 font-normal">(+0점)</span>
+              </div>
+            </div>
+          </div>
+        </div>
+
+        <!-- High score info -->
+        <div class="flex items-center justify-center gap-1.5 text-stone-400 text-xs font-bold mb-4">
+          <span>🏆</span> 내 최고 기록: <span id="gameover-highscore" class="font-mono text-stone-200">0점</span>
+        </div>
+
+        <!-- Restart Button -->
+        <button
+          id="btn-restart"
+          class="w-full py-3.5 px-6 rounded-2xl bg-gradient-to-r from-amber-500 via-orange-500 to-red-600 hover:from-amber-400 hover:to-red-500 active:scale-95 text-stone-950 font-black text-lg sm:text-xl shadow-[0_0_25px_rgba(245,158,11,0.6)] flex items-center justify-center gap-2 transition cursor-pointer"
+        >
+          <span>🔄</span> 다시 도전하기 (60초)
+        </button>
+      </div>
+    </div>
+
+    <!-- Pure Vanilla JS Game Script -->
+    <script src="./script.js"></script>
   </body>
 </html>
